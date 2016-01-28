@@ -78,8 +78,12 @@ sub get_files {
 sub get_attr_file {
     my $file = shift;
     _log($file);
+    $file =~ s/^\/{1,1}/\/\//;
+    _log($file);
     my $p4 = p4_do(qq|p4 fstat -Ol -T fileSize,headModTime "$file" 2>/dev/null|);
-    $p4 = { map { s/^\.+\s//; split " ", $_ } split /\n/, $p4 };
+    _log($p4);
+    return 0 unless $p4;
+    $p4 = { map { s/^\.+\s//; split " ", $_ } grep { /\w/ } split /\n/, $p4 };
     return $p4;
 }
 
@@ -88,33 +92,42 @@ sub get_attr_dir {
     _log($dir);
     if ($dir eq '//') { $dir .= '*' } else { $dir .= '/*' }
     my $p4 = p4_do(qq|p4 dirs "$dir" 2>/dev/null|) . "\n" . p4_do(qq|p4 files "$dir" 2>/dev/null|);
-    dump $p4;
-    return $p4;
+    _log($p4);
+    return 1;
 }
 
 
 sub e_getattr {
     my $file = shift;
     _log($file);
+    _log(basename($file));
+    
     my $type;
     my $attr;
+    my $time;
+    my $size;
     if ($attr = get_attr_file($file)) {
 	_log(dump $attr);
+	_log($file, 'is a file');
 	$type = 0100;
+	$size = $attr->{fileSize} || 0;
+	$time = $attr->{headModTime} || time;
     } elsif ($attr = get_attr_dir($file)) {
+	_log($file, 'is a dir');
+	$time = time;
 	$type = 0040;
     } else {
 	return -ENOENT()
     }
     # $type = 0040;
     my $mode = 0755;
-    my $size = 1024;
+    
     
     my ($modes) = ($type << 9) + $mode;
     my ($dev, $ino, $rdev, $blocks, $gid, $uid, $nlink, $blksize) = (0,0,0,1,0,0,1,1024);
     my ($atime, $ctime, $mtime);
     
-    $atime = $ctime = $mtime = time;
+    $atime = $ctime = $mtime = $time;
     
     return ($dev,$ino,$modes,$nlink,$uid,$gid,$rdev,$size,$atime,$mtime,$ctime,$blksize,$blocks);
 }
