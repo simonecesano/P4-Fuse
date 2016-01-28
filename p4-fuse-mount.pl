@@ -26,10 +26,20 @@ use POSIX qw(ENOENT EISDIR EINVAL);
 use CHI;
 use File::Path qw(make_path remove_tree);
 
-my $cache = '~/.p4-fuse/cache';
+
+my $cache = '/Users/cesansim/.p4-fuse/cache';
 ($cache) = make_path($cache) unless -d $cache;
+print STDERR $cache;
+die $@ unless -d $cache;
+
+
 my $c = CHI->new( driver => 'File', root_dir => $cache);
 $c->clear();
+
+open my $log, '>>', '/Users/cesansim/.p4-fuse/log';
+sub _log {
+    print $log (join ', ', (@_, @{[caller(0)]}[2]));
+}
 
 my $i = 0;
     
@@ -40,7 +50,7 @@ sub p4_do {
 	$r = qx|$p4|;
 	$c->set($p4, $r, "2 minutes");
     } else {
-	print STDERR $p4;
+	_log($p4);
     }
     return $r;
 }
@@ -48,7 +58,7 @@ sub p4_do {
 
 sub get_dirs {
     my $file = shift;
-    print STDERR $file;
+    _log($file);
     my $file_re = quotemeta('//'); 
     if ($file eq '//') { $file .= '*' } else { $file .= '/*' }
     my $dirs = p4_do(qq|p4 dirs "$file" 2>/dev/null|);
@@ -65,12 +75,38 @@ sub get_files {
     return @files;
 }
 
+sub get_attr_file {
+    my $file = shift;
+    _log($file);
+    my $p4 = p4_do(qq|p4 fstat -Ol -T fileSize,headModTime "$file" 2>/dev/null|);
+    $p4 = { map { s/^\.+\s//; split " ", $_ } split /\n/, $p4 };
+    return $p4;
+}
+
+sub get_attr_dir {
+    my $dir = shift;
+    _log($dir);
+    if ($dir eq '//') { $dir .= '*' } else { $dir .= '/*' }
+    my $p4 = p4_do(qq|p4 dirs "$dir" 2>/dev/null|) . "\n" . p4_do(qq|p4 files "$dir" 2>/dev/null|);
+    dump $p4;
+    return $p4;
+}
+
 
 sub e_getattr {
     my $file = shift;
-    print $file;
-    
-    my $type = 0040;
+    _log($file);
+    my $type;
+    my $attr;
+    if ($attr = get_attr_file($file)) {
+	_log(dump $attr);
+	$type = 0100;
+    } elsif ($attr = get_attr_dir($file)) {
+	$type = 0040;
+    } else {
+	return -ENOENT()
+    }
+    $type = 0040;
     my $mode = 0755;
     my $size = 1024;
     
@@ -85,7 +121,7 @@ sub e_getattr {
 
 sub e_getdir {
     my $file = shift;
-    print $file;
+    _log($file);
     $file =~ s|^/|//|;
     my $file_re = quotemeta(substr($file, 2). '/');
     my @dirs = get_dirs($file);
