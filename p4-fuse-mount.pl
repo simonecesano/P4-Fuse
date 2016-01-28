@@ -106,7 +106,7 @@ sub e_getattr {
     } else {
 	return -ENOENT()
     }
-    $type = 0040;
+    # $type = 0040;
     my $mode = 0755;
     my $size = 1024;
     
